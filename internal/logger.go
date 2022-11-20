@@ -9,6 +9,10 @@ func Info(format string, args ...any) {
 	log.Printf("[INFO] %v\n", fmt.Sprintf(format, args...))
 }
 
+func Trace(format string, args ...any) {
+	log.Printf("[TRACE] %v\n", fmt.Sprintf(format, args...))
+}
+
 func Warn(format string, args ...any) {
 	log.Printf("[WARN] %v\n", fmt.Sprintf(format, args...))
 }
