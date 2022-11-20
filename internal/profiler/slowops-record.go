@@ -1,8 +1,11 @@
-package internal
+package profiler
 
 import (
 	"context"
 	"time"
+
+	"github.com/guillotjulien/mongo-profiler/internal/constant"
+	"github.com/guillotjulien/mongo-profiler/internal/logger"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -35,18 +38,18 @@ type SlowOpsRecord struct {
 // Java does label + db + col + op + fields + sort + projection
 
 func InitSlowOpsRecordCollection(ctx context.Context, db *mongo.Database) error {
-	if err := db.CreateCollection(ctx, SLOWOPS_COLLECTION); err != nil {
+	if err := db.CreateCollection(ctx, constant.PROFILER_SLOWOPS_COLLECTION); err != nil {
 		if e, ok := err.(mongo.ServerError); ok {
-			if !e.HasErrorCode(COLLECTION_EXISTS_ERROR) {
+			if !e.HasErrorCode(constant.MONGO_COLLECTION_EXISTS_ERROR) {
 				return err
 			}
 		}
 	}
 
-	collection := db.Collection(SLOWOPS_COLLECTION)
+	collection := db.Collection(constant.PROFILER_SLOWOPS_COLLECTION)
 
 	options := options.Index()
-	options.SetExpireAfterSeconds(SLOWOPS_EXPIRE_SECONDS) // 3 months - could make it a knob later
+	options.SetExpireAfterSeconds(constant.PROFILER_SLOWOPS_EXPIRE_SECONDS) // 3 months - could make it a knob later
 
 	// Add indexes to the collection
 	_, err := collection.Indexes().CreateMany(
@@ -66,7 +69,7 @@ func InitSlowOpsRecordCollection(ctx context.Context, db *mongo.Database) error 
 	)
 	if err != nil {
 		if e, ok := err.(mongo.ServerError); ok {
-			if !e.HasErrorCode(INDEX_EXISTS_ERROR) {
+			if !e.HasErrorCode(constant.MONGO_INDEX_EXISTS_ERROR) {
 				return err
 			}
 		}
@@ -76,7 +79,7 @@ func InitSlowOpsRecordCollection(ctx context.Context, db *mongo.Database) error 
 }
 
 func (r *SlowOpsRecord) TryInsert(ctx context.Context, db *mongo.Database) {
-	if _, err := db.Collection(SLOWOPS_COLLECTION).InsertOne(ctx, r); err != nil {
-		Error("failed to insert slow ops record %+v: %v", r, err) // Simply add as an error, but we don't really care. We could react if we see that the amount is too high
+	if _, err := db.Collection(constant.PROFILER_SLOWOPS_COLLECTION).InsertOne(ctx, r); err != nil {
+		logger.Warn("failed to insert slow ops record %+v: %v", r, err) // Simply add as an error, but we don't really care. We could react if we see that the amount is too high
 	}
 }

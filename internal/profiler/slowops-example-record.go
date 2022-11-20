@@ -1,7 +1,10 @@
-package internal
+package profiler
 
 import (
 	"context"
+
+	"github.com/guillotjulien/mongo-profiler/internal/constant"
+	"github.com/guillotjulien/mongo-profiler/internal/logger"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -16,18 +19,18 @@ type SlowOpsExampleRecord struct {
 }
 
 func InitSlowOpsExampleRecordCollection(ctx context.Context, db *mongo.Database) error {
-	if err := db.CreateCollection(ctx, SLOWOPS_EXAMPLE_COLLECTION); err != nil {
+	if err := db.CreateCollection(ctx, constant.PROFILER_SLOWOPS_EXAMPLE_COLLECTION); err != nil {
 		if e, ok := err.(mongo.ServerError); ok {
-			if !e.HasErrorCode(COLLECTION_EXISTS_ERROR) {
+			if !e.HasErrorCode(constant.MONGO_COLLECTION_EXISTS_ERROR) {
 				return err
 			}
 		}
 	}
 
-	collection := db.Collection(SLOWOPS_EXAMPLE_COLLECTION)
+	collection := db.Collection(constant.PROFILER_SLOWOPS_EXAMPLE_COLLECTION)
 
 	planHashOptions := options.Index()
-	planHashOptions.SetExpireAfterSeconds(SLOWOPS_EXPIRE_SECONDS)
+	planHashOptions.SetExpireAfterSeconds(constant.PROFILER_SLOWOPS_EXPIRE_SECONDS)
 
 	queryHashOptions := options.Index()
 	queryHashOptions.SetUnique(true)
@@ -48,7 +51,7 @@ func InitSlowOpsExampleRecordCollection(ctx context.Context, db *mongo.Database)
 	)
 	if err != nil {
 		if e, ok := err.(mongo.ServerError); ok {
-			if !e.HasErrorCode(INDEX_EXISTS_ERROR) {
+			if !e.HasErrorCode(constant.MONGO_INDEX_EXISTS_ERROR) {
 				return err
 			}
 		}
@@ -58,13 +61,13 @@ func InitSlowOpsExampleRecordCollection(ctx context.Context, db *mongo.Database)
 }
 
 func (r *SlowOpsExampleRecord) TryInsert(ctx context.Context, db *mongo.Database) {
-	if _, err := db.Collection(SLOWOPS_EXAMPLE_COLLECTION).InsertOne(ctx, r); err != nil {
+	if _, err := db.Collection(constant.PROFILER_SLOWOPS_EXAMPLE_COLLECTION).InsertOne(ctx, r); err != nil {
 		if e, ok := err.(mongo.ServerError); ok {
-			if e.HasErrorCode(DUPLICATE_DOCUMENT_ERROR) {
+			if e.HasErrorCode(constant.MONGO_DUPLICATE_DOCUMENT_ERROR) {
 				return
 			}
 		}
 
-		Error("failed to insert slow ops example record %+v: %v", r, err) // Simply add as an error, but we don't really care. We could react if we see that the amount is too high
+		logger.Warn("failed to insert slow ops example record %+v: %v", r, err) // Simply add as an error, but we don't really care. We could react if we see that the amount is too high
 	}
 }

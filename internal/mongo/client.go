@@ -1,9 +1,12 @@
-package internal
+package mongo
 
 import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/guillotjulien/mongo-profiler/internal/constant"
+	"github.com/guillotjulien/mongo-profiler/internal/logger"
 
 	"go.mongodb.org/mongo-driver/event"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -11,12 +14,12 @@ import (
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
-type MongoClient struct {
+type Client struct {
 	C       *mongo.Client
 	Connstr connstring.ConnString
 }
 
-func NewMongoClient(ctx context.Context, uri string) (client *MongoClient, err error) {
+func NewClient(ctx context.Context, uri string) (client *Client, err error) {
 	connstr, err := connstring.ParseAndValidate(uri)
 	if err != nil {
 		return nil, err
@@ -30,23 +33,23 @@ func NewMongoClient(ctx context.Context, uri string) (client *MongoClient, err e
 	opt.ApplyURI(uri)
 
 	if !connstr.ConnectTimeoutSet { // Set a sensible timeout
-		opt.SetConnectTimeout(CONNECT_TIMEOUT)
-		opt.SetServerSelectionTimeout(CONNECT_TIMEOUT)
+		opt.SetConnectTimeout(constant.MONGO_CONNECT_TIMEOUT)
+		opt.SetServerSelectionTimeout(constant.MONGO_CONNECT_TIMEOUT)
 	}
 
 	if !connstr.SocketTimeoutSet { // Set a sensible timeout for queries
-		opt.SetSocketTimeout(SOCKET_TIMEOUT)
+		opt.SetSocketTimeout(constant.MONGO_SOCKET_TIMEOUT)
 	}
 
 	cmdMonitor := &event.CommandMonitor{
 		Started: func(_ context.Context, evt *event.CommandStartedEvent) {
-			Trace("Started command %v: %v", evt.RequestID, evt.Command)
+			logger.Trace("Started command %v: %v", evt.RequestID, evt.Command)
 		},
 		Succeeded: func(_ context.Context, evt *event.CommandSucceededEvent) {
-			Trace("Completed command %v after %vns", evt.RequestID, evt.DurationNanos)
+			logger.Trace("Completed command %v after %vns", evt.RequestID, evt.DurationNanos)
 		},
 		Failed: func(_ context.Context, evt *event.CommandFailedEvent) {
-			Trace("Failed command %v: %v", evt.RequestID, evt.Failure)
+			logger.Trace("Failed command %v: %v", evt.RequestID, evt.Failure)
 		},
 	}
 
@@ -57,7 +60,7 @@ func NewMongoClient(ctx context.Context, uri string) (client *MongoClient, err e
 		return nil, err
 	}
 
-	client = &MongoClient{
+	client = &Client{
 		C:       c,
 		Connstr: connstr,
 	}
@@ -65,9 +68,9 @@ func NewMongoClient(ctx context.Context, uri string) (client *MongoClient, err e
 	return client, nil
 }
 
-func (client *MongoClient) Connect(ctx context.Context) error {
-	return WithRetry(MAX_RETRY, RETRY_AFTER, func() error {
-		Info("trying to establish connection with host %v", client.Connstr.Hosts)
+func (client *Client) Connect(ctx context.Context) error {
+	return withRetry(constant.MAX_RETRY, constant.RETRY_AFTER, func() error {
+		logger.Info("trying to establish connection with host %v", client.Connstr.Hosts)
 
 		if err := client.C.Connect(ctx); err != nil {
 			return fmt.Errorf("cannot establish connection with host: %s", err)
@@ -76,17 +79,17 @@ func (client *MongoClient) Connect(ctx context.Context) error {
 			return fmt.Errorf("cannot ping host: %s", err)
 		}
 
-		Info("established connection with host %v", client.Connstr.Hosts)
+		logger.Info("established connection with host %v", client.Connstr.Hosts)
 
 		return nil
 	})
 }
 
-func (client *MongoClient) Disconnect(ctx context.Context) error {
+func (client *Client) Disconnect(ctx context.Context) error {
 	return client.C.Disconnect(ctx)
 }
 
-func (client *MongoClient) Equal(cmpClient *MongoClient) bool {
+func (client *Client) Equal(cmpClient *Client) bool {
 	// TODO: Compare hosts and database, if they are the same, return true
 	return false
 }

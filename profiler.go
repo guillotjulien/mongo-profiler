@@ -8,7 +8,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/guillotjulien/mongo-profiler/internal"
+	"github.com/guillotjulien/mongo-profiler/internal/constant"
+	"github.com/guillotjulien/mongo-profiler/internal/logger"
+	"github.com/guillotjulien/mongo-profiler/internal/mongo"
+	"github.com/guillotjulien/mongo-profiler/internal/profiler"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -24,33 +27,33 @@ func main() {
 	}
 
 	ctx := context.Background()
-	listenedClient, err := internal.NewMongoClient(ctx, *listenedURI)
+	listenedClient, err := mongo.NewClient(ctx, *listenedURI)
 	if err != nil {
-		internal.Fatal("failed to instantiate listened client: %v", err)
+		logger.Fatal("failed to instantiate listened client: %v", err)
 	}
 
-	internalClient, err := internal.NewMongoClient(ctx, *internalURI)
+	internalClient, err := mongo.NewClient(ctx, *internalURI)
 	if err != nil {
-		internal.Fatal("failed to instantiate internal client: %v", err)
+		logger.Fatal("failed to instantiate internal client: %v", err)
 	}
 
 	if listenedClient.Equal(internalClient) {
-		internal.Fatal("cannot use the same database for listened and internal MongoDB installation")
+		logger.Fatal("cannot use the same database for listened and internal MongoDB installation")
 	}
 
 	if err := internalClient.Connect(ctx); err != nil {
-		internal.Fatal("failed to connect to internal MongoDB installation: %v", err)
+		logger.Fatal("failed to connect to internal MongoDB installation: %v", err)
 	}
 
 	// Init internal store collections
-	if err := internal.InitSlowOpsRecordCollection(ctx, internalClient.C.Database(internalClient.Connstr.Database)); err != nil {
-		internal.Fatal("failed to initialize %s collection in target MongoDB installation: %v", internal.SLOWOPS_COLLECTION, err)
+	if err := profiler.InitSlowOpsRecordCollection(ctx, internalClient.C.Database(internalClient.Connstr.Database)); err != nil {
+		logger.Fatal("failed to initialize %s collection in target MongoDB installation: %v", constant.PROFILER_SLOWOPS_COLLECTION, err)
 	}
-	if err := internal.InitSlowOpsExampleRecordCollection(ctx, internalClient.C.Database(internalClient.Connstr.Database)); err != nil {
-		internal.Fatal("failed to initialize %s collection in target MongoDB installation: %v", internal.SLOWOPS_EXAMPLE_COLLECTION, err)
+	if err := profiler.InitSlowOpsExampleRecordCollection(ctx, internalClient.C.Database(internalClient.Connstr.Database)); err != nil {
+		logger.Fatal("failed to initialize %s collection in target MongoDB installation: %v", constant.PROFILER_SLOWOPS_EXAMPLE_COLLECTION, err)
 	}
 
-	l := internal.NewListener(listenedClient)
+	l := profiler.NewProfiler(listenedClient)
 
 	teardownComplete := make(chan bool, 1)
 	signals := make(chan os.Signal, 1)
@@ -58,28 +61,28 @@ func main() {
 	go func() {
 		<-signals // Wait for signal
 
-		internal.Info("received shutdown signal. Stopping profiler")
+		logger.Info("received shutdown signal. Stopping profiler")
 
 		if err := l.Stop(ctx); err != nil {
-			internal.Fatal("failed to stop profiler: %v", err)
+			logger.Fatal("failed to stop profiler: %v", err)
 		}
 
 		if err := internalClient.Disconnect(ctx); err != nil {
-			internal.Fatal("failed to close connection with target MongoDB installation: %v", err)
+			logger.Fatal("failed to close connection with target MongoDB installation: %v", err)
 		}
 
-		internal.Info("profiler was successfully stopped")
+		logger.Info("profiler was successfully stopped")
 
 		teardownComplete <- true
 	}()
 
 	err = l.Start(ctx, func(ctx context.Context, data bson.Raw) error {
-		entry, err := internal.NewProfilerEntry(strings.Join(listenedClient.Connstr.Hosts, ","), data)
+		entry, err := profiler.NewProfilerEntry(strings.Join(listenedClient.Connstr.Hosts, ","), data)
 		if err != nil {
-			internal.Error("failed to read profiling entry: %w", err)
+			logger.Error("failed to read profiling entry: %w", err)
 		}
 
-		internal.Info("received slow op entry for %s %v", entry.Collection, entry.Timestamp)
+		logger.Info("received slow op entry for %s %v", entry.Collection, entry.Timestamp)
 
 		entry.ToSlowOpsRecord().TryInsert(ctx, internalClient.C.Database(internalClient.Connstr.Database))
 		entry.ToSlowOpsExampleRecord().TryInsert(ctx, internalClient.C.Database(internalClient.Connstr.Database))
@@ -88,7 +91,7 @@ func main() {
 	})
 
 	if err != nil {
-		internal.Fatal("%v", err)
+		logger.Fatal("%v", err)
 	}
 
 	<-teardownComplete // wait for teardown
