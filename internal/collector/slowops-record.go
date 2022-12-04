@@ -1,4 +1,4 @@
-package profiler
+package collector
 
 import (
 	"context"
