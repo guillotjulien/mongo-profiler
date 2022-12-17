@@ -65,14 +65,17 @@ func (c *Collector) Start(ctx context.Context, handler func(ctx context.Context,
 					if err := c.increaseSystemProfileSize(ctx); err != nil {
 						logger.Fatal("failed to resize %s: %w", constant.PROFILER_SYSTEM_PROFILE, err)
 					}
-					logger.Info("resized %s to %vMB", constant.PROFILER_SYSTEM_PROFILE, c.currentSystemProfileSize)
+					logger.Info("resized %s to %v bytes", constant.PROFILER_SYSTEM_PROFILE, c.currentSystemProfileSize)
 				}
 			}
 		}
 
 		if cursor == nil || cursor.ID() == 0 || ctx.Err() != nil || cursor.Err() != nil { // Cursor was closed - create a new cursor (actually fine since this is a very small capped collection)
 			logger.Info("change stream cursor closed for %s. Will retry after %s", constant.PROFILER_SYSTEM_PROFILE, constant.RETRY_AFTER.String())
-			time.Sleep(constant.RETRY_AFTER) // FIXME: (LOW) How to shot the sleep when stopping collector?
+			select { // make sure we can cancel the wait and close fast
+			case <-ctx.Done():
+			case <-time.After(constant.RETRY_AFTER):
+			}
 
 			if c.stopChangeStream { // Make sure we quit when we were sleeping and we suddenly stop the change stream
 				break
