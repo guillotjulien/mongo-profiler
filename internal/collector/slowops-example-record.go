@@ -12,7 +12,8 @@ import (
 )
 
 type SlowOpsExampleRecord struct {
-	QueryHash   string   `bson:"queryHash"` // Should be unique
+	QueryHash   string   `bson:"queryHash"` // queryHash + collection should be unique
+	Collection  string   `bson:"collection"`
 	PlanHash    string   `bson:"planHash"`
 	PlanSummary string   `bson:"planSummary"` // Summary of used plan (can group queries by plan used)
 	Document    bson.Raw `bson:"document"`
@@ -44,7 +45,7 @@ func InitSlowOpsExampleRecordCollection(ctx context.Context, db *mongo.Database)
 				Options: planHashOptions,
 			},
 			{
-				Keys:    bson.M{"queryHash": 1},
+				Keys:    bson.M{"queryHash": 1, "collection": 1},
 				Options: queryHashOptions,
 			},
 		},

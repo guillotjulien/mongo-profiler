@@ -75,6 +75,7 @@ func (entry *ProfilerEntry) ToSlowOpsRecord() *SlowOpsRecord {
 func (entry *ProfilerEntry) ToSlowOpsExampleRecord() *SlowOpsExampleRecord {
 	return &SlowOpsExampleRecord{
 		QueryHash:   entry.queryHash(),
+		Collection:  entry.Collection,
 		PlanHash:    entry.PlanHash,
 		PlanSummary: entry.PlanSummary,
 		Document:    entry.Document,
