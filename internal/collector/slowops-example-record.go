@@ -25,6 +25,8 @@ func InitSlowOpsExampleRecordCollection(ctx context.Context, db *mongo.Database)
 			if !e.HasErrorCode(constant.MONGO_COLLECTION_EXISTS_ERROR) {
 				return err
 			}
+		} else {
+			return err
 		}
 	}
 
@@ -45,7 +47,10 @@ func InitSlowOpsExampleRecordCollection(ctx context.Context, db *mongo.Database)
 				Options: planHashOptions,
 			},
 			{
-				Keys:    bson.M{"queryHash": 1, "collection": 1},
+				Keys: bson.D{
+					{Key: "queryHash", Value: 1},
+					{Key: "collection", Value: 1},
+				},
 				Options: queryHashOptions,
 			},
 		},
@@ -55,6 +60,8 @@ func InitSlowOpsExampleRecordCollection(ctx context.Context, db *mongo.Database)
 			if !e.HasErrorCode(constant.MONGO_INDEX_EXISTS_ERROR) {
 				return err
 			}
+		} else {
+			return err
 		}
 	}
 

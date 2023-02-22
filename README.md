@@ -23,3 +23,18 @@ Stats that could be interesting:
 
 1. `podman run -p 27017:27017 docker.io/library/mongo`
 1. ``
+
+
+db.getCollection("slowops").aggregate([
+  {
+    $group: {
+      _id: { queryHash: "$queryHash", collection: "$collection" },
+      cnt: { $sum: 1 },
+      avgDuration: { $avg: "$durationMS" },
+      minDuration: { $min: "$durationMS" },
+      maxDuration: { $max: "$durationMS" },
+    },
+  },
+  { $sort: { avgDuration: -1 } },
+  { $match: { cnt: { $gt: 10 } } },
+]);
