@@ -2,11 +2,11 @@ package collector
 
 import (
 	"fmt"
-	"hash/adler32"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/guillotjulien/mongo-profiler/internal/utils/murmur3"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsonrw"
 )
@@ -82,6 +82,11 @@ func (entry *ProfilerEntry) ToSlowOpsExampleRecord() *SlowOpsExampleRecord {
 	}
 }
 
+// Query Shape:
+// > A combination of query predicate, sort, projection, and collation.
+// > The query shape allows MongoDB to identify logically equivalent queries and analyze their performance.
+//
+// https://www.mongodb.com/docs/manual/reference/glossary/#std-term-query-shape
 func (entry *ProfilerEntry) queryHash() string {
 	if entry.QueryHash != "" {
 		return entry.QueryHash // e.g. FFF0C0D3
@@ -89,34 +94,15 @@ func (entry *ProfilerEntry) queryHash() string {
 
 	// Need to be able to differentiate them
 	if entry.OP == "insert" || entry.OP == "delete" || entry.OP == "update" {
-		return strings.ToUpper(strconv.FormatInt(int64(adler32.Checksum([]byte(fmt.Sprintf("%s-%s", entry.OP, entry.Collection)))), 16)) // FIXME: Murmur3
+		hash, _ := murmur3.Hash([]byte(fmt.Sprintf("%s-%s", entry.OP, entry.Collection)), 0)
+		return strings.ToUpper(strconv.FormatInt(hash, 16))[:8]
+
+		// Or something slightly resembling if murmur3 doesn't cut it
+		// return strings.ToUpper(strconv.FormatInt(int64(adler32.Checksum([]byte(fmt.Sprintf("%s-%s", entry.OP, entry.Collection)))), 16))
 	}
 
-	// TODO: entry.OP == "command": this is harder since we need to parse the query somehow to determine the shape
-
-	// TODO: Hashing
-	// strings.ToUpper(strconv.FormatInt(int64(adler32.Checksum([]byte("test"))), 16)) (at least look like the original: 45D01C1)
-
-	// Could also use Murmur and convert it to hex (What MongoDB does internally):
-	// https://github.com/scylladb/scylla-go-driver/tree/main/transport/murmur
-
-	// TODO: Get all match + sort keys and use that to generate query hash
-
-	// TODO: generate a hash manually
-
-	// In case the query is empty, there is no queryHash or planCacheKey. Example distinct key on all collection
-	// Java does label + db + col + op + fields + sort + projection
-
-	// Mongo does: SimpleStringDataComparator::kInstance.hash (https://github.com/mongodb/mongo/blob/459f574b8a4afd9e2e843c625f2ee4b726da12f3/src/mongo/db/query/canonical_query_encoder.cpp#L1146)
-
-	// https://www.mongodb.com/docs/v4.2/reference/glossary/#term-query-shape
-
-	// Empty query hash:
-	//	- distinct
-	//  - getMore -> = useless noise
-	//  - aggregate -> most important (but only seems to be when match was empty? Would be logical given we don't have fields to generate hash)
-
-	// TODO: collect all keys used in first $match + $sort +
+	// Could we parse the query by passing it to the Mongo driver so that we can get the query + sort + projection?
+	// This way we could extract a query shape.
 
 	return ""
 }
