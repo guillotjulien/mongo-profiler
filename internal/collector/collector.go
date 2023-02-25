@@ -3,6 +3,7 @@ package collector
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/guillotjulien/mongo-profiler/internal/constant"
@@ -67,6 +68,11 @@ func (c *Collector) Start(ctx context.Context, handler func(ctx context.Context,
 					}
 					logger.Info("resized %s to %v bytes", constant.PROFILER_SYSTEM_PROFILE, c.currentSystemProfileSize)
 				}
+			} else if e, ok := cursor.Err().(mongo.CommandError); ok {
+				log.Fatal(e.Code) // FIXME: (mongo.CommandError)
+			} else {
+				log.Fatal(cursor.Err())
+				// TODO: Crash for now
 			}
 		}
 
@@ -166,6 +172,8 @@ func (c *Collector) increaseSystemProfileSize(ctx context.Context) error {
 			if !e.HasErrorCode(constant.MONGO_COLLECTION_EXISTS_ERROR) {
 				return fmt.Errorf("failed to create collection %s: %w", constant.PROFILER_SYSTEM_PROFILE, err)
 			}
+		} else {
+			return fmt.Errorf("failed to create collection %s: %w", constant.PROFILER_SYSTEM_PROFILE, err)
 		}
 	}
 
