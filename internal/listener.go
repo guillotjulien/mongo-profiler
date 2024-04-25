@@ -11,26 +11,21 @@ import (
 )
 
 type Listener struct {
-	conf   Config
-	client *mongo.Client
+	client *MongoClient
 
 	lastTimestamp    time.Time
 	stopChangeStream bool
 }
 
-func NewListener(conf Config) *Listener {
+func NewListener(client *MongoClient) *Listener {
 	l := &Listener{}
-	l.conf = conf
+	l.client = client
 
 	return l
 }
 
 func (l *Listener) Start(ctx context.Context, handler func(ctx context.Context, data bson.Raw) error) error {
-	if err := l.connect(ctx); err != nil {
-		return err
-	}
-
-	db := l.client.Database(l.conf.Database)
+	db := l.client.C.Database(l.client.Connstr.Database)
 
 	// Stop profiler
 	res := db.RunCommand(ctx, bson.M{
@@ -38,13 +33,13 @@ func (l *Listener) Start(ctx context.Context, handler func(ctx context.Context, 
 	})
 
 	if res.Err() != nil {
-		return fmt.Errorf("failed to stop profiler for Mongo host %s (database: %s): %w", l.conf.Host, l.conf.Database, res.Err())
+		return fmt.Errorf("failed to stop profiler for Mongo host %s (database: %s): %w", l.client.Connstr.Hosts, l.client.Connstr.Database, res.Err())
 	}
 
 	// Clean current profiling collection to make sure it is capped
 	err := db.Collection(SYSTEM_PROFILE).Drop(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to drop %s for Mongo host %s (database: %s): %w", SYSTEM_PROFILE, l.conf.Host, l.conf.Database, err)
+		return fmt.Errorf("failed to drop %s for Mongo host %s (database: %s): %w", SYSTEM_PROFILE, l.client.Connstr.Hosts, l.client.Connstr.Database, err)
 	}
 
 	createCollectionOptions := options.CreateCollectionOptions{}
@@ -54,7 +49,7 @@ func (l *Listener) Start(ctx context.Context, handler func(ctx context.Context, 
 	if err := db.CreateCollection(ctx, SYSTEM_PROFILE, &createCollectionOptions); err != nil {
 		if e, ok := err.(mongo.ServerError); ok {
 			if !e.HasErrorCode(COLLECTION_EXISTS_ERROR) {
-				return fmt.Errorf("failed to create %s for Mongo host %s (database: %s): %w", SYSTEM_PROFILE, l.conf.Host, l.conf.Database, err)
+				return fmt.Errorf("failed to create %s for Mongo host %s (database: %s): %w", SYSTEM_PROFILE, l.client.Connstr.Hosts, l.client.Connstr.Database, err)
 			}
 		}
 	}
@@ -66,7 +61,7 @@ func (l *Listener) Start(ctx context.Context, handler func(ctx context.Context, 
 	})
 
 	if res.Err() != nil {
-		return fmt.Errorf("failed to start profiler for Mongo host %s (database: %s): %w", l.conf.Host, l.conf.Database, res.Err())
+		return fmt.Errorf("failed to start profiler for Mongo host %v (database: %s): %w", l.client.Connstr.Hosts, l.client.Connstr.Database, res.Err())
 	}
 
 	// start change stream
@@ -78,23 +73,23 @@ func (l *Listener) Start(ctx context.Context, handler func(ctx context.Context, 
 	cursorOptions.SetCursorType(options.Tailable)
 	cursorOptions.SetSort(bson.M{"$natural": 1})
 
-	Info("starting change stream against %s for Mongo host %s (database: %s)", SYSTEM_PROFILE, l.conf.Host, l.conf.Database)
+	Info("starting change stream against %s for Mongo host %v (database: %s)", SYSTEM_PROFILE, l.client.Connstr.Hosts, l.client.Connstr.Database)
 
 	for !l.stopChangeStream {
 		// According to MongoDB, the driver handle reconnection in case of network error
 
 		if ctx.Err() != nil {
-			Warn("change stream cursor error against %s for Mongo host %s (database %s): %v", SYSTEM_PROFILE, l.conf.Host, l.conf.Database, ctx.Err())
+			Warn("change stream cursor error against %s for Mongo host %v (database %s): %v", SYSTEM_PROFILE, l.client.Connstr.Hosts, l.client.Connstr.Database, ctx.Err())
 		}
 
 		if cursor == nil || cursor.ID() == 0 || ctx.Err() != nil { // Cursor was closed - create a new cursor (actually fine since this is a very small capped collection)
-			Info("change stream cursor closed against %s for Mongo host %s (database: %s) Will retry after %s", SYSTEM_PROFILE, l.conf.Host, l.conf.Database, RETRY_AFTER.String())
+			Info("change stream cursor closed against %s for Mongo host %v (database: %s) Will retry after %s", SYSTEM_PROFILE, l.client.Connstr.Hosts, l.client.Connstr.Database, RETRY_AFTER.String())
 			time.Sleep(RETRY_AFTER)
 
 			cursorQuery := bson.M{
 				"ns": bson.M{
-					"$regex": fmt.Sprintf("^%s.", l.conf.Database),                  // only the database in our conf
-					"$ne":    fmt.Sprintf("%s.%s", l.conf.Database, SYSTEM_PROFILE), // all collections except system.profile
+					"$regex": fmt.Sprintf("^%s.", l.client.Connstr.Database),                  // only the database in our conf
+					"$ne":    fmt.Sprintf("%s.%s", l.client.Connstr.Database, SYSTEM_PROFILE), // all collections except system.profile
 				},
 				"ts": bson.M{
 					"$gt": l.lastTimestamp,
@@ -103,7 +98,7 @@ func (l *Listener) Start(ctx context.Context, handler func(ctx context.Context, 
 
 			cursor, err = collection.Find(ctx, cursorQuery, &cursorOptions)
 			if err != nil {
-				Error("failed to obtain cursor for mongo host %s (database: %s): %v", l.conf.Host, l.conf.Database, err)
+				Error("failed to obtain cursor for mongo host %v (database: %s): %v", l.client.Connstr.Hosts, l.client.Connstr.Database, err)
 			}
 		}
 
@@ -124,54 +119,23 @@ func (l *Listener) Stop(ctx context.Context) error {
 	// 1. stop change stream
 	l.stopChangeStream = true
 
-	Info("attempting to stop profiler for mongo host %s (database: %s)", l.conf.Host, l.conf.Database)
+	Info("attempting to stop profiler for mongo host %v (database: %s)", l.client.Connstr.Hosts, l.client.Connstr.Database)
 
 	// 2. stop profiler
-	res := l.client.Database(l.conf.Database).RunCommand(ctx, bson.M{
+	res := l.client.C.Database(l.client.Connstr.Database).RunCommand(ctx, bson.M{
 		"profile": 0,
 	})
 
 	if res.Err() != nil {
-		return fmt.Errorf("failed to stop profiler for Mongo host %s (database: %s): %w", l.conf.Host, l.conf.Database, res.Err())
+		return fmt.Errorf("failed to stop profiler for Mongo host %v (database: %s): %w", l.client.Connstr.Hosts, l.client.Connstr.Database, res.Err())
 	}
 
-	Info("successfully stopped profiler for mongo host %s (database: %s)", l.conf.Host, l.conf.Database)
+	Info("successfully stopped profiler for mongo host %v (database: %s)", l.client.Connstr.Hosts, l.client.Connstr.Database)
 
 	// 3. close connection with source store
 	if err := l.client.Disconnect(ctx); err != nil {
-		return fmt.Errorf("failed to close connection with Mongo host %s (database: %s): %w", l.conf.Host, l.conf.Database, err)
+		return fmt.Errorf("failed to close connection with Mongo host %v (database: %s): %w", l.client.Connstr.Hosts, l.client.Connstr.Database, err)
 	}
 
 	return nil
-}
-
-func (l *Listener) connect(ctx context.Context) error {
-	opt := options.Client()
-	opt.ApplyURI(fmt.Sprintf("mongodb://%v/%v?ssl=%v", l.conf.Host, l.conf.Database, l.conf.SSL)) // TODO: how to handle + mongodb+srv:// probably just pass the URL instead of everything?
-
-	if l.conf.UseAuth() {
-		opt.SetAuth(options.Credential{
-			Username: l.conf.Username,
-			Password: l.conf.Password,
-		})
-	}
-
-	return WithRetry(MAX_RETRY, RETRY_AFTER, func() error {
-		var err error
-
-		Info("trying to establish connection with Mongo host %s (database: %s)", l.conf.Host, l.conf.Database)
-
-		l.client, err = mongo.Connect(ctx, opt)
-		if err != nil {
-			return fmt.Errorf("failed to establish connection with Mongo host %s (database: %s): %v", l.conf.Host, l.conf.Database, err)
-		}
-
-		if err = l.client.Ping(ctx, nil); err != nil {
-			return fmt.Errorf("failed to ping Mongo host %s (database: %s): %v", l.conf.Host, l.conf.Database, err)
-		}
-
-		Info("established connection with Mongo host %s (database: %s)", l.conf.Host, l.conf.Database)
-
-		return nil
-	})
 }

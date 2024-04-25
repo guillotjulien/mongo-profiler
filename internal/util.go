@@ -8,7 +8,8 @@ import (
 func WithRetry(maxAttempt uint, sleep time.Duration, handler func() error) (err error) {
 	for i := 0; i < int(maxAttempt); i++ {
 		if i > 0 {
-			Warn("will retry in %s after error %v", sleep.String(), err)
+			Warn("%v", err)
+			Warn("will retry after %s", sleep.String())
 			time.Sleep(sleep)
 			sleep *= 2 // exponential backoff
 		}
@@ -18,5 +19,5 @@ func WithRetry(maxAttempt uint, sleep time.Duration, handler func() error) (err 
 			return nil
 		}
 	}
-	return fmt.Errorf("failed after %v attemps. Last error: %w", maxAttempt, err)
+	return fmt.Errorf("failed after %v attempts. Last error: %v", maxAttempt, err)
 }

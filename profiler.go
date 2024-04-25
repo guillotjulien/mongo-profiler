@@ -2,47 +2,55 @@ package main
 
 import (
 	"context"
+	"flag"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/guillotjulien/mongo-profiler/internal"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
-const SYSTEM_PROFILE = "system.profile"
-const INTERNAL_DB = "mongo-profiler"
-
 func main() {
+	listenedURI := flag.String("listened", "", "Connection string URI of listened MongoDB installation")
+	internalURI := flag.String("internal", "mongodb://localhost:27017/profiler", "Connection string URI of internal MongoDB installation")
+
+	flag.Parse()
+
+	if *listenedURI == "" || *internalURI == "" {
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
 	ctx := context.Background()
-
-	internalClient, err := mongo.Connect(ctx) // TODO: Lower the timeout and log attempts to connect
+	listenedClient, err := internal.NewMongoClient(ctx, *listenedURI)
 	if err != nil {
-		internal.Fatal("failed to connect to internal store: %v", err)
+		internal.Fatal("failed to instantiate listened client: %v", err)
 	}
 
-	if err := internal.InitSlowOpsRecordCollection(ctx, internalClient.Database(INTERNAL_DB)); err != nil {
-		internal.Fatal("failed to initialize %s collection in internal store: %v", internal.SLOWOPS_COLLECTION, err)
+	internalClient, err := internal.NewMongoClient(ctx, *internalURI)
+	if err != nil {
+		internal.Fatal("failed to instantiate internal client: %v", err)
 	}
 
-	if err := internal.InitSlowOpsExampleRecordCollection(ctx, internalClient.Database(INTERNAL_DB)); err != nil {
-		internal.Fatal("failed to initialize %s collection in internal store: %v", internal.SLOWOPS_EXAMPLE_COLLECTION, err)
+	if listenedClient.Equal(internalClient) {
+		internal.Fatal("cannot use the same database for listened and internal MongoDB installation")
 	}
 
-	conf := internal.Config{
-		Host:     "",
-		Username: "", // FIXME: Use flags when running the profiler (e.g. mongo-profiler -sourceUri="..." -targetUri="...")
-		Password: "",
-		SSL:      true,
-		Database: "",
+	if err := internalClient.Connect(ctx); err != nil {
+		internal.Fatal("failed to connect to internal MongoDB installation: %v", err)
 	}
 
-	if _, err := conf.Validate(); err != nil {
-		internal.Fatal("invalid configuration provided: %v", err)
+	// Init internal store collections
+	if err := internal.InitSlowOpsRecordCollection(ctx, internalClient.C.Database(internalClient.Connstr.Database)); err != nil {
+		internal.Fatal("failed to initialize %s collection in target MongoDB installation: %v", internal.SLOWOPS_COLLECTION, err)
+	}
+	if err := internal.InitSlowOpsExampleRecordCollection(ctx, internalClient.C.Database(internalClient.Connstr.Database)); err != nil {
+		internal.Fatal("failed to initialize %s collection in target MongoDB installation: %v", internal.SLOWOPS_EXAMPLE_COLLECTION, err)
 	}
 
-	l := internal.NewListener(conf)
+	l := internal.NewListener(listenedClient)
 
 	teardownComplete := make(chan bool, 1)
 	signals := make(chan os.Signal, 1)
@@ -57,7 +65,7 @@ func main() {
 		}
 
 		if err := internalClient.Disconnect(ctx); err != nil {
-			internal.Fatal("failed to close connection with internal store: %v", err)
+			internal.Fatal("failed to close connection with target MongoDB installation: %v", err)
 		}
 
 		internal.Info("profiler was successfully stopped")
@@ -66,15 +74,15 @@ func main() {
 	}()
 
 	err = l.Start(ctx, func(ctx context.Context, data bson.Raw) error {
-		entry, err := internal.NewProfilerEntry(conf.Host, data)
+		entry, err := internal.NewProfilerEntry(strings.Join(listenedClient.Connstr.Hosts, ","), data)
 		if err != nil {
 			internal.Error("failed to read profiling entry: %w", err)
 		}
 
 		internal.Info("received slow op entry for %s %v", entry.Collection, entry.Timestamp)
 
-		entry.ToSlowOpsRecord().TryInsert(ctx, internalClient.Database(INTERNAL_DB))
-		entry.ToSlowOpsExampleRecord().TryInsert(ctx, internalClient.Database(INTERNAL_DB))
+		entry.ToSlowOpsRecord().TryInsert(ctx, internalClient.C.Database(internalClient.Connstr.Database))
+		entry.ToSlowOpsExampleRecord().TryInsert(ctx, internalClient.C.Database(internalClient.Connstr.Database))
 
 		return nil
 	})
