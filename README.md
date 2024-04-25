@@ -26,15 +26,30 @@ Stats that could be interesting:
 
 
 db.getCollection("slowops").aggregate([
+  { $sort: { durationMS: 1 } },
   {
     $group: {
-      _id: { queryHash: "$queryHash", collection: "$collection" },
+      _id: { queryHash: "$queryHash", collection: "$collection", user: "$user" },
       cnt: { $sum: 1 },
+      durations: { $push: '$durationMS' },
       avgDuration: { $avg: "$durationMS" },
       minDuration: { $min: "$durationMS" },
       maxDuration: { $max: "$durationMS" },
     },
   },
-  { $sort: { avgDuration: -1 } },
+  {
+    $project: {
+      _id: 1,
+      cnt: 1,
+      avgDuration: 1,
+      minDuration: 1,
+      maxDuration: 1,
+      p50: { $arrayElemAt: ["$durations", { $floor: { $multiply: [{ $size: "$durations" }, 0.5] } }] },
+      p85: { $arrayElemAt: ["$durations", { $floor: { $multiply: [{ $size: "$durations" }, 0.85] } }] },
+      p90: { $arrayElemAt: ["$durations", { $floor: { $multiply: [{ $size: "$durations" }, 0.9] } }] },
+      p99: { $arrayElemAt: ["$durations", { $floor: { $multiply: [{ $size: "$durations" }, 0.99] } }] },
+    },
+  },
+  { $sort: { p50: -1 } },
   { $match: { cnt: { $gt: 10 } } },
 ]);
