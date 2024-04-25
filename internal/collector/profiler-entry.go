@@ -1,6 +1,10 @@
 package collector
 
 import (
+	"fmt"
+	"hash/adler32"
+	"strconv"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -81,6 +85,13 @@ func (entry *ProfilerEntry) queryHash() string {
 	if entry.QueryHash != "" {
 		return entry.QueryHash // e.g. FFF0C0D3
 	}
+
+	// Need to be able to differentiate them
+	if entry.OP == "insert" || entry.OP == "delete" || entry.OP == "update" {
+		return strings.ToUpper(strconv.FormatInt(int64(adler32.Checksum([]byte(fmt.Sprintf("%s-%s", entry.OP, entry.Collection)))), 16)) // FIXME: Murmur3
+	}
+
+	// TODO: entry.OP == "command": this is harder since we need to parse the query somehow to determine the shape
 
 	// TODO: Hashing
 	// strings.ToUpper(strconv.FormatInt(int64(adler32.Checksum([]byte("test"))), 16)) (at least look like the original: 45D01C1)
