@@ -9,3 +9,8 @@ When stopping the program, turn off profiler: db.setProfilingLevel(0)
 https://www.mongodb.com/docs/manual/tutorial/manage-the-database-profiler/
 
 UI need to allow sorting by multiple criteria. e.g. avg duration + count (i.e. Give me what really matters in term of duration)
+
+## Test
+
+1. `podman run -p 27017:27017 docker.io/library/mongo`
+1. ``

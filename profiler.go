@@ -18,12 +18,17 @@ import (
 func main() {
 	listenedURI := flag.String("listened", "", "Connection string URI of listened MongoDB installation")
 	internalURI := flag.String("internal", "mongodb://localhost:27017/profiler", "Connection string URI of internal MongoDB installation")
+	verbose := flag.Bool("v", false, "Make the profiler more talkative")
 
 	flag.Parse()
 
 	if *listenedURI == "" || *internalURI == "" {
 		flag.PrintDefaults()
 		os.Exit(1)
+	}
+
+	if *verbose {
+		logger.VERBOSE_LOGS = true
 	}
 
 	ctx := context.Background()
