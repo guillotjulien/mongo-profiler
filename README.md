@@ -1,3 +1,5 @@
+# Mongo Profiler
+
 Kafka is useless since we use a capped collection. Simply start a change stream against "system.profile". We don't really care about resume tokens.
 Ingest change stream, put it in internal Mongo Database (with TTL index).
 
@@ -24,7 +26,11 @@ Stats that could be interesting:
 1. `podman run -p 27017:27017 docker.io/library/mongo`
 1. ``
 
+In Mongo 7.0, we have the $median and $percentile operators
+- https://www.mongodb.com/docs/upcoming/reference/operator/aggregation/median/#mongodb-group-grp.-median
+- https://www.mongodb.com/docs/upcoming/reference/operator/aggregation/percentile/#mongodb-group-grp.-percentile
 
+```
 db.getCollection("slowops").aggregate([
   { $sort: { durationMS: 1 } },
   {
@@ -53,3 +59,4 @@ db.getCollection("slowops").aggregate([
   { $sort: { p50: -1 } },
   { $match: { cnt: { $gt: 10 } } },
 ]);
+```

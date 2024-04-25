@@ -33,10 +33,6 @@ type SlowOpsRecord struct {
 	PlanSummary    string    `bson:"planSummary,omitempty"` // Make plan hash more readable by storing the summary
 }
 
-// FIXME: In case the query is empty, there is no queryHash or planCacheKey. Example distinct key on all collection
-// Should we generate a hash ourself in this case? e.g. ns + op + _EMPTY?
-// Java does label + db + col + op + fields + sort + projection
-
 func InitSlowOpsRecordCollection(ctx context.Context, db *mongo.Database) error {
 	if err := db.CreateCollection(ctx, constant.PROFILER_SLOWOPS_COLLECTION); err != nil {
 		if e, ok := err.(mongo.ServerError); ok {
