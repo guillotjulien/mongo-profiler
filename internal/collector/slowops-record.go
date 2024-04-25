@@ -43,6 +43,8 @@ func InitSlowOpsRecordCollection(ctx context.Context, db *mongo.Database) error 
 			if !e.HasErrorCode(constant.MONGO_COLLECTION_EXISTS_ERROR) {
 				return err
 			}
+		} else {
+			return err
 		}
 	}
 
@@ -72,6 +74,8 @@ func InitSlowOpsRecordCollection(ctx context.Context, db *mongo.Database) error 
 			if !e.HasErrorCode(constant.MONGO_INDEX_EXISTS_ERROR) {
 				return err
 			}
+		} else {
+			return err
 		}
 	}
 
