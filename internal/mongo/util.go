@@ -1,15 +1,17 @@
-package internal
+package mongo
 
 import (
 	"fmt"
 	"time"
+
+	"github.com/guillotjulien/mongo-profiler/internal/logger"
 )
 
-func WithRetry(maxAttempt uint, sleep time.Duration, handler func() error) (err error) {
+func withRetry(maxAttempt uint, sleep time.Duration, handler func() error) (err error) {
 	for i := 0; i < int(maxAttempt); i++ {
 		if i > 0 {
-			Warn("%v", err)
-			Warn("will retry after %s", sleep.String())
+			logger.Warn("%v", err)
+			logger.Warn("will retry after %s", sleep.String())
 			time.Sleep(sleep)
 			sleep *= 2 // exponential backoff
 		}
