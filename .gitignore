@@ -18,5 +18,5 @@
 go.work
 
 # Test files
-*.json
-*.log
+./*.json
+./*.log

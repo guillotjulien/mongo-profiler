@@ -10,6 +10,15 @@ https://www.mongodb.com/docs/manual/tutorial/manage-the-database-profiler/
 
 UI need to allow sorting by multiple criteria. e.g. avg duration + count (i.e. Give me what really matters in term of duration)
 
+Stats that could be interesting:
+ - Top 5 queries (in terms of number / duration)
+ - Top 5 collections in terms of number of queries (or number of documents scanned?)
+ - A view per collection w/ following stats (could just be filters?):
+    - Number of queries running without indexes
+    - Number of queries slower than X
+ - A mean to check long running queries across members of a replica set
+ - A place where we can monitor live running queries (like Atlas does it?)
+
 ## Test
 
 1. `podman run -p 27017:27017 docker.io/library/mongo`

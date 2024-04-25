@@ -31,7 +31,7 @@ func main() {
 		logger.VERBOSE_LOGS = true
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
 	listenedClient, err := mongo.NewClient(ctx, *listenedURI)
 	if err != nil {
 		logger.Fatal("failed to instantiate listened client: %v", err)
@@ -75,6 +75,8 @@ func main() {
 		if err := internalClient.Disconnect(ctx); err != nil {
 			logger.Fatal("failed to close connection with target MongoDB installation: %v", err)
 		}
+
+		cancel()
 
 		logger.Info("collector was successfully stopped")
 
