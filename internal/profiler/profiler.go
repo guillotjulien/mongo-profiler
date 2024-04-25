@@ -29,6 +29,10 @@ func NewProfiler(client *mgo.Client) *Profiler {
 }
 
 func (l *Profiler) Start(ctx context.Context, handler func(ctx context.Context, data bson.Raw) error) error {
+	if err := l.client.Connect(ctx); err != nil {
+		return fmt.Errorf("failed to connect to Mongo host %s (database: %s): %w", l.client.Connstr.Hosts, l.client.Connstr.Database, err)
+	}
+
 	db := l.client.C.Database(l.client.Connstr.Database)
 
 	// Stop profiler
@@ -86,7 +90,10 @@ func (l *Profiler) Start(ctx context.Context, handler func(ctx context.Context, 
 			logger.Warn("change stream cursor error against %s for Mongo host %v (database %s): %v", constant.PROFILER_SYSTEM_PROFILE, l.client.Connstr.Hosts, l.client.Connstr.Database, ctx.Err())
 		}
 
-		if cursor == nil || cursor.ID() == 0 || ctx.Err() != nil { // Cursor was closed - create a new cursor (actually fine since this is a very small capped collection)
+		// TODO: If cursor error (cursor.Err() != nil), and depending on the error code, resize the oplog cap
+		// "[TRACE] Failed command 48: (CappedPositionLost) CollectionScan died due to failure to restore tailable cursor position. Last seen record id: RecordId(90)"
+
+		if cursor == nil || cursor.ID() == 0 || ctx.Err() != nil || cursor.Err() != nil { // Cursor was closed - create a new cursor (actually fine since this is a very small capped collection)
 			logger.Info("change stream cursor closed against %s for Mongo host %v (database: %s) Will retry after %s", constant.PROFILER_SYSTEM_PROFILE, l.client.Connstr.Hosts, l.client.Connstr.Database, constant.RETRY_AFTER.String())
 			time.Sleep(constant.RETRY_AFTER)
 
