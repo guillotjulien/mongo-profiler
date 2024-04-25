@@ -1,4 +1,4 @@
-package profiler
+package collector
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type Profiler struct {
+type Collector struct {
 	client *mgo.Client
 
 	lastTimestamp            time.Time
@@ -22,23 +22,23 @@ type Profiler struct {
 	currentSystemProfileSize int64
 }
 
-func NewProfiler(client *mgo.Client) *Profiler {
-	l := &Profiler{}
-	l.client = client
+func NewCollector(client *mgo.Client) *Collector {
+	c := &Collector{}
+	c.client = client
 
-	return l
+	return c
 }
 
-func (l *Profiler) Start(ctx context.Context, handler func(ctx context.Context, data bson.Raw) error) error {
-	if err := l.client.Connect(ctx); err != nil {
-		return fmt.Errorf("failed to connect to Mongo host %s (database: %s): %w", l.client.Connstr.Hosts, l.client.Connstr.Database, err)
+func (c *Collector) Start(ctx context.Context, handler func(ctx context.Context, data bson.Raw) error) error {
+	if err := c.client.Connect(ctx); err != nil {
+		return fmt.Errorf("failed to connect to Mongo host %s (database: %s): %w", c.client.Connstr.Hosts, c.client.Connstr.Database, err)
 	}
 
-	if err := l.increaseSystemProfileSize(ctx); err != nil {
-		return fmt.Errorf("failed to initialize profiler: %w", err)
+	if err := c.increaseSystemProfileSize(ctx); err != nil {
+		return fmt.Errorf("failed to initialize collector: %w", err)
 	}
 
-	db := l.client.C.Database(l.client.Connstr.Database)
+	db := c.client.C.Database(c.client.Connstr.Database)
 
 	// start change stream
 	collection := db.Collection(constant.PROFILER_SYSTEM_PROFILE)
@@ -51,7 +51,7 @@ func (l *Profiler) Start(ctx context.Context, handler func(ctx context.Context, 
 
 	logger.Info("starting change stream against %s", constant.PROFILER_SYSTEM_PROFILE)
 
-	for !l.stopChangeStream {
+	for !c.stopChangeStream {
 		if ctx.Err() != nil {
 			logger.Warn("change stream cursor error %w", ctx.Err())
 		}
@@ -62,29 +62,29 @@ func (l *Profiler) Start(ctx context.Context, handler func(ctx context.Context, 
 			if e, ok := cursor.Err().(mongo.ServerError); ok {
 				if e.HasErrorCode(constant.MONGO_CAPPED_POSITION_LOST_ERROR) {
 					logger.Info("attempting to resize %s", constant.PROFILER_SYSTEM_PROFILE)
-					if err := l.increaseSystemProfileSize(ctx); err != nil {
+					if err := c.increaseSystemProfileSize(ctx); err != nil {
 						logger.Fatal("failed to resize %s: %w", constant.PROFILER_SYSTEM_PROFILE, err)
 					}
-					logger.Info("resized %s to %vMB", constant.PROFILER_SYSTEM_PROFILE, l.currentSystemProfileSize)
+					logger.Info("resized %s to %vMB", constant.PROFILER_SYSTEM_PROFILE, c.currentSystemProfileSize)
 				}
 			}
 		}
 
 		if cursor == nil || cursor.ID() == 0 || ctx.Err() != nil || cursor.Err() != nil { // Cursor was closed - create a new cursor (actually fine since this is a very small capped collection)
 			logger.Info("change stream cursor closed for %s. Will retry after %s", constant.PROFILER_SYSTEM_PROFILE, constant.RETRY_AFTER.String())
-			time.Sleep(constant.RETRY_AFTER) // FIXME: (LOW) How to shot the sleep when stopping profiler?
+			time.Sleep(constant.RETRY_AFTER) // FIXME: (LOW) How to shot the sleep when stopping collector?
 
-			if l.stopChangeStream { // Make sure we quit when we were sleeping and we suddenly stop the change stream
+			if c.stopChangeStream { // Make sure we quit when we were sleeping and we suddenly stop the change stream
 				break
 			}
 
 			cursorQuery := bson.M{
 				"ns": bson.M{
-					"$regex": fmt.Sprintf("^%s\\.", l.client.Connstr.Database),                                  // only the database in our conf
-					"$ne":    fmt.Sprintf("%s.%s", l.client.Connstr.Database, constant.PROFILER_SYSTEM_PROFILE), // all collections except system.profile
+					"$regex": fmt.Sprintf("^%s\\.", c.client.Connstr.Database),                                  // only the database in our conf
+					"$ne":    fmt.Sprintf("%s.%s", c.client.Connstr.Database, constant.PROFILER_SYSTEM_PROFILE), // all collections except system.profile
 				},
 				"ts": bson.M{
-					"$gt": l.lastTimestamp,
+					"$gt": c.lastTimestamp,
 				},
 			}
 
@@ -112,33 +112,33 @@ func (l *Profiler) Start(ctx context.Context, handler func(ctx context.Context, 
 	return nil
 }
 
-func (l *Profiler) Stop(ctx context.Context) error {
+func (c *Collector) Stop(ctx context.Context) error {
 	// 1. stop change stream
-	l.stopChangeStream = true
+	c.stopChangeStream = true
 
-	logger.Info("attempting to stop profiler for mongo host %v (database: %s)", l.client.Connstr.Hosts, l.client.Connstr.Database)
+	logger.Info("attempting to stop collector for mongo host %v (database: %s)", c.client.Connstr.Hosts, c.client.Connstr.Database)
 
 	// 2. stop profiler
-	res := l.client.C.Database(l.client.Connstr.Database).RunCommand(ctx, bson.M{
+	res := c.client.C.Database(c.client.Connstr.Database).RunCommand(ctx, bson.M{
 		"profile": 0,
 	})
 
 	if res.Err() != nil {
-		return fmt.Errorf("failed to stop profiler for Mongo host %v (database: %s): %w", l.client.Connstr.Hosts, l.client.Connstr.Database, res.Err())
+		return fmt.Errorf("failed to stop profiler for Mongo host %v (database: %s): %w", c.client.Connstr.Hosts, c.client.Connstr.Database, res.Err())
 	}
 
-	logger.Info("successfully stopped profiler for mongo host %v (database: %s)", l.client.Connstr.Hosts, l.client.Connstr.Database)
+	logger.Info("successfully stopped collector for mongo host %v (database: %s)", c.client.Connstr.Hosts, c.client.Connstr.Database)
 
 	// 3. close connection with source store
-	if err := l.client.Disconnect(ctx); err != nil {
-		return fmt.Errorf("failed to close connection with Mongo host %v (database: %s): %w", l.client.Connstr.Hosts, l.client.Connstr.Database, err)
+	if err := c.client.Disconnect(ctx); err != nil {
+		return fmt.Errorf("failed to close connection with Mongo host %v (database: %s): %w", c.client.Connstr.Hosts, c.client.Connstr.Database, err)
 	}
 
 	return nil
 }
 
-func (l *Profiler) increaseSystemProfileSize(ctx context.Context) error {
-	db := l.client.C.Database(l.client.Connstr.Database)
+func (c *Collector) increaseSystemProfileSize(ctx context.Context) error {
+	db := c.client.C.Database(c.client.Connstr.Database)
 
 	// Stop profiler - no problem if it fails
 	db.RunCommand(ctx, bson.M{
@@ -152,11 +152,11 @@ func (l *Profiler) increaseSystemProfileSize(ctx context.Context) error {
 		return fmt.Errorf("failed to drop collection %s: %w", constant.PROFILER_SYSTEM_PROFILE, err)
 	}
 
-	l.currentSystemProfileSize += constant.PROFILER_SYSTEM_PROFILE_CAPPED_INCREMENT
+	c.currentSystemProfileSize += constant.PROFILER_SYSTEM_PROFILE_CAPPED_INCREMENT
 
 	createCollectionOptions := options.CreateCollectionOptions{}
 	createCollectionOptions.SetCapped(true)
-	createCollectionOptions.SetSizeInBytes(l.currentSystemProfileSize)
+	createCollectionOptions.SetSizeInBytes(c.currentSystemProfileSize)
 
 	if err := db.CreateCollection(ctx, constant.PROFILER_SYSTEM_PROFILE, &createCollectionOptions); err != nil {
 		if e, ok := err.(mongo.ServerError); ok {
@@ -173,7 +173,7 @@ func (l *Profiler) increaseSystemProfileSize(ctx context.Context) error {
 	})
 
 	if res.Err() != nil {
-		return fmt.Errorf("failed to start profiler: %w", res.Err())
+		return fmt.Errorf("failed to start collector: %w", res.Err())
 	}
 
 	return nil

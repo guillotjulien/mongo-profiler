@@ -8,10 +8,10 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/guillotjulien/mongo-profiler/internal/collector"
 	"github.com/guillotjulien/mongo-profiler/internal/constant"
 	"github.com/guillotjulien/mongo-profiler/internal/logger"
 	"github.com/guillotjulien/mongo-profiler/internal/mongo"
-	"github.com/guillotjulien/mongo-profiler/internal/profiler"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -51,14 +51,14 @@ func main() {
 	}
 
 	// Init internal store collections
-	if err := profiler.InitSlowOpsRecordCollection(ctx, internalClient.C.Database(internalClient.Connstr.Database)); err != nil {
-		logger.Fatal("failed to initialize %s collection in target MongoDB installation: %v", constant.PROFILER_SLOWOPS_COLLECTION, err)
+	if err := collector.InitSlowOpsRecordCollection(ctx, internalClient.C.Database(internalClient.Connstr.Database)); err != nil {
+		logger.Fatal("failed to initialize %s collection in listened MongoDB installation: %v", constant.PROFILER_SLOWOPS_COLLECTION, err)
 	}
-	if err := profiler.InitSlowOpsExampleRecordCollection(ctx, internalClient.C.Database(internalClient.Connstr.Database)); err != nil {
-		logger.Fatal("failed to initialize %s collection in target MongoDB installation: %v", constant.PROFILER_SLOWOPS_EXAMPLE_COLLECTION, err)
+	if err := collector.InitSlowOpsExampleRecordCollection(ctx, internalClient.C.Database(internalClient.Connstr.Database)); err != nil {
+		logger.Fatal("failed to initialize %s collection in listened MongoDB installation: %v", constant.PROFILER_SLOWOPS_EXAMPLE_COLLECTION, err)
 	}
 
-	l := profiler.NewProfiler(listenedClient)
+	c := collector.NewCollector(listenedClient)
 
 	teardownComplete := make(chan bool, 1)
 	signals := make(chan os.Signal, 1)
@@ -66,23 +66,23 @@ func main() {
 	go func() {
 		<-signals // Wait for signal
 
-		logger.Info("received shutdown signal. Stopping profiler")
+		logger.Info("received shutdown signal. Stopping collector")
 
-		if err := l.Stop(ctx); err != nil {
-			logger.Fatal("failed to stop profiler: %v", err)
+		if err := c.Stop(ctx); err != nil {
+			logger.Fatal("failed to stop collector: %v", err)
 		}
 
 		if err := internalClient.Disconnect(ctx); err != nil {
 			logger.Fatal("failed to close connection with target MongoDB installation: %v", err)
 		}
 
-		logger.Info("profiler was successfully stopped")
+		logger.Info("collector was successfully stopped")
 
 		teardownComplete <- true
 	}()
 
-	err = l.Start(ctx, func(ctx context.Context, data bson.Raw) error {
-		entry, err := profiler.NewProfilerEntry(strings.Join(listenedClient.Connstr.Hosts, ","), data)
+	err = c.Start(ctx, func(ctx context.Context, data bson.Raw) error {
+		entry, err := collector.NewProfilerEntry(strings.Join(listenedClient.Connstr.Hosts, ","), data)
 		if err != nil {
 			logger.Error("failed to read profiling entry: %w", err)
 		}
