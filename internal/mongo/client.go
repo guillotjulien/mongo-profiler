@@ -93,3 +93,7 @@ func (client *Client) Equal(cmpClient *Client) bool {
 	// TODO: Compare hosts and database, if they are the same, return true
 	return false
 }
+
+func (client *Client) GetDefaultDatabase() *mongo.Database {
+	return client.C.Database(client.Connstr.Database)
+}

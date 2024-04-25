@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/guillotjulien/mongo-profiler/internal/constant"
@@ -78,8 +79,13 @@ func InitSlowOpsRecordCollection(ctx context.Context, db *mongo.Database) error 
 	return nil
 }
 
-func (r *SlowOpsRecord) TryInsert(ctx context.Context, db *mongo.Database) {
-	if _, err := db.Collection(constant.PROFILER_SLOWOPS_COLLECTION).InsertOne(ctx, r); err != nil {
+func (r *SlowOpsRecord) TryInsert(writer io.Writer) {
+	data, err := bson.Marshal(r)
+	if err != nil {
+		logger.Warn("failed to insert slow ops record %+v: %v", r, err) // Simply add as an error, but we don't really care. We could react if we see that the amount is too high
+	}
+
+	if _, err = writer.Write(data); err != nil {
 		logger.Warn("failed to insert slow ops record %+v: %v", r, err) // Simply add as an error, but we don't really care. We could react if we see that the amount is too high
 	}
 }

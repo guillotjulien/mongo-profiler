@@ -4,9 +4,11 @@
   - [ ] [MEDIUM] Implement manual query shape detection
   - [ ] [MEDIUM] Recover from more errors
   - [ ] [MEDIUM] Allow configuration of constants (via CLI or conf file)
+  - [ ] [MEDIUM] Indexes usage stats (via scheduled collector) - ideally we'd store the report in a collection so that we can compare across time
   - [ ] [LOW] Prevent duplicated records when recovering tailable cursor
   - [ ] [LOW] More granular logging
   - [ ] [LOW] Systemd service file (or profiler install command)
+  - [ ] [LOW] Collection stats (size, index size, number of docs, etc), again, storing the report so that we can compare it across time would make sense
 - [ ] Profiler UI
   - [ ] [HIGH] List of queries aggregated by query shape + collection
     - [ ] [HIGH] Sort / Filter

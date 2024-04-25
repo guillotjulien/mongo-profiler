@@ -51,10 +51,10 @@ func main() {
 	}
 
 	// Init internal store collections
-	if err := collector.InitSlowOpsRecordCollection(ctx, internalClient.C.Database(internalClient.Connstr.Database)); err != nil {
+	if err := collector.InitSlowOpsRecordCollection(ctx, internalClient.GetDefaultDatabase()); err != nil {
 		logger.Fatal("failed to initialize %s collection in listened MongoDB installation: %v", constant.PROFILER_SLOWOPS_COLLECTION, err)
 	}
-	if err := collector.InitSlowOpsExampleRecordCollection(ctx, internalClient.C.Database(internalClient.Connstr.Database)); err != nil {
+	if err := collector.InitSlowOpsExampleRecordCollection(ctx, internalClient.GetDefaultDatabase()); err != nil {
 		logger.Fatal("failed to initialize %s collection in listened MongoDB installation: %v", constant.PROFILER_SLOWOPS_EXAMPLE_COLLECTION, err)
 	}
 
@@ -83,6 +83,18 @@ func main() {
 		teardownComplete <- true
 	}()
 
+	slowOpsWriter := &mongo.MongoWriter{
+		Client:     internalClient,
+		Collection: constant.PROFILER_SLOWOPS_COLLECTION,
+		Ctx:        ctx,
+	}
+
+	slowOpsExampleWriter := &mongo.MongoWriter{
+		Client:     internalClient,
+		Collection: constant.PROFILER_SLOWOPS_EXAMPLE_COLLECTION,
+		Ctx:        ctx,
+	}
+
 	err = c.Start(ctx, func(ctx context.Context, data bson.Raw) error {
 		entry, err := collector.NewProfilerEntry(strings.Join(listenedClient.Connstr.Hosts, ","), data)
 		if err != nil {
@@ -91,8 +103,8 @@ func main() {
 
 		logger.Info("received slow op entry for %s %v", entry.Collection, entry.Timestamp)
 
-		entry.ToSlowOpsRecord().TryInsert(ctx, internalClient.C.Database(internalClient.Connstr.Database))
-		entry.ToSlowOpsExampleRecord().TryInsert(ctx, internalClient.C.Database(internalClient.Connstr.Database))
+		entry.ToSlowOpsRecord().TryInsert(slowOpsWriter)
+		entry.ToSlowOpsExampleRecord().TryInsert(slowOpsExampleWriter)
 
 		return nil
 	})

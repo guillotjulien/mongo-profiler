@@ -39,7 +39,7 @@ func (c *Collector) Start(ctx context.Context, handler func(ctx context.Context,
 		return fmt.Errorf("failed to initialize collector: %w", err)
 	}
 
-	db := c.client.C.Database(c.client.Connstr.Database)
+	db := c.client.GetDefaultDatabase()
 
 	// start change stream
 	collection := db.Collection(constant.PROFILER_SYSTEM_PROFILE)
@@ -128,7 +128,7 @@ func (c *Collector) Stop(ctx context.Context) error {
 	logger.Info("attempting to stop collector for mongo host %v (database: %s)", c.client.Connstr.Hosts, c.client.Connstr.Database)
 
 	// 2. stop profiler
-	res := c.client.C.Database(c.client.Connstr.Database).RunCommand(ctx, bson.M{
+	res := c.client.GetDefaultDatabase().RunCommand(ctx, bson.M{
 		"profile": 0,
 	})
 
@@ -147,7 +147,7 @@ func (c *Collector) Stop(ctx context.Context) error {
 }
 
 func (c *Collector) increaseSystemProfileSize(ctx context.Context) error {
-	db := c.client.C.Database(c.client.Connstr.Database)
+	db := c.client.GetDefaultDatabase()
 
 	// Stop profiler - no problem if it fails
 	db.RunCommand(ctx, bson.M{

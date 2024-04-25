@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"io"
 
 	"github.com/guillotjulien/mongo-profiler/internal/constant"
 	"github.com/guillotjulien/mongo-profiler/internal/logger"
@@ -68,14 +69,19 @@ func InitSlowOpsExampleRecordCollection(ctx context.Context, db *mongo.Database)
 	return nil
 }
 
-func (r *SlowOpsExampleRecord) TryInsert(ctx context.Context, db *mongo.Database) {
-	if _, err := db.Collection(constant.PROFILER_SLOWOPS_EXAMPLE_COLLECTION).InsertOne(ctx, r); err != nil {
+func (r *SlowOpsExampleRecord) TryInsert(writer io.Writer) {
+	data, err := bson.Marshal(r)
+	if err != nil {
+		logger.Warn("failed to insert slow ops example record %+v: %v", r, err) // Simply add as an error, but we don't really care. We could react if we see that the amount is too high
+	}
+
+	if _, err = writer.Write(data); err != nil {
 		if e, ok := err.(mongo.ServerError); ok {
+			// Simply means we already have this example stored
 			if e.HasErrorCode(constant.MONGO_DUPLICATE_DOCUMENT_ERROR) {
 				return
 			}
 		}
-
 		logger.Warn("failed to insert slow ops example record %+v: %v", r, err) // Simply add as an error, but we don't really care. We could react if we see that the amount is too high
 	}
 }
