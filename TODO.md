@@ -1,6 +1,7 @@
 # TODO
 
 - [ ] Collector
+  - [ ] [HIGH] Automatically switch server when cluster primary changes
   - [ ] [MEDIUM] Implement manual query shape detection
   - [ ] [MEDIUM] Recover from more errors
   - [ ] [MEDIUM] Allow configuration of constants (via CLI or conf file)
