@@ -16,16 +16,20 @@ import (
 )
 
 type Collector struct {
-	client *mgo.Client
+	client          *mgo.Client
+	slowThresholdMS uint64
+	profilerLevel   uint
 
 	lastTimestamp            time.Time
 	stopChangeStream         bool
 	currentSystemProfileSize int64
 }
 
-func NewCollector(client *mgo.Client) *Collector {
+func NewCollector(client *mgo.Client, slowThresholdMS uint64, profilerLevel uint) *Collector {
 	c := &Collector{}
 	c.client = client
+	c.slowThresholdMS = slowThresholdMS
+	c.profilerLevel = profilerLevel
 
 	return c
 }
@@ -116,7 +120,7 @@ func (c *Collector) Start(ctx context.Context, handler func(ctx context.Context,
 		// Worse case we just have a few duplicates so not the end of the world.
 		// Or unique constraint on lsid.id? -> Doesn't work, not all ops have this...
 
-		go handler(ctx, cursor.Current) // The result insn't important. We can miss a few without any issue
+		go handler(ctx, cursor.Current) // The result isn't important. We can miss a few without any issue
 	}
 	return nil
 }
@@ -178,9 +182,12 @@ func (c *Collector) increaseSystemProfileSize(ctx context.Context) error {
 	}
 
 	// turn on profiler
+	logger.Info("Setting profiler to level %v", c.profilerLevel)
+	logger.Info("Slow query threshold %vms", c.slowThresholdMS)
+
 	res := db.RunCommand(ctx, bson.D{
-		{Key: "profile", Value: 1},
-		{Key: "slowms", Value: constant.PROFILER_QUERY_SLOW_MS},
+		{Key: "profile", Value: c.profilerLevel},
+		{Key: "slowms", Value: c.slowThresholdMS},
 	})
 
 	if res.Err() != nil {

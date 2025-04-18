@@ -16,10 +16,6 @@ func Trace(format string, args ...any) {
 }
 
 func Info(format string, args ...any) {
-	if !VERBOSE_LOGS {
-		return
-	}
-
 	log.Printf("[INFO] %v\n", fmt.Sprintf(format, args...))
 }
 

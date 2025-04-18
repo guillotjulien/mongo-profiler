@@ -19,6 +19,8 @@ func main() {
 	listenedURI := flag.String("listened", "", "Connection string URI of listened MongoDB installation")
 	internalURI := flag.String("internal", "mongodb://localhost:27017/profiler", "Connection string URI of internal MongoDB installation")
 	verbose := flag.Bool("v", false, "Make the profiler more talkative")
+	slowThresholdMS := flag.Uint64("slowThresholdMS", 100, "Define the minimum query duration in milliseconds after which a query will be logged")
+	profilerLevel := flag.Uint("profilerLevel", 1, "Set MongoDB profiler level. 1 only logs slow queries, 2 logs all queries")
 
 	flag.Parse()
 
@@ -58,7 +60,7 @@ func main() {
 		logger.Fatal("failed to initialize %s collection in listened MongoDB installation: %v", constant.PROFILER_SLOWOPS_EXAMPLE_COLLECTION, err)
 	}
 
-	c := collector.NewCollector(listenedClient)
+	c := collector.NewCollector(listenedClient, *slowThresholdMS, *profilerLevel)
 
 	teardownComplete := make(chan bool, 1)
 	signals := make(chan os.Signal, 1)
@@ -101,7 +103,7 @@ func main() {
 			logger.Error("failed to read profiling entry: %w", err)
 		}
 
-		logger.Info("received slow op entry for %s %v", entry.Collection, entry.Timestamp)
+		logger.Info("received slow op entry for %s", entry.Collection)
 
 		entry.ToSlowOpsRecord().TryInsert(slowOpsWriter)
 		entry.ToSlowOpsExampleRecord().TryInsert(slowOpsExampleWriter)
